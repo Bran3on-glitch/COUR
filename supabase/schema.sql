@@ -1,0 +1,15 @@
+create table profiles(id uuid primary key references auth.users on delete cascade,username text unique not null check(username ~ '^[a-z0-9_]{3,20}$'),created_at timestamptz default now());
+create table logs(id bigserial primary key,user_id uuid not null references profiles(id) on delete cascade,anime_id int not null,title text not null,cover text,rating numeric(2,1) check(rating between 0.5 and 5),review text,created_at timestamptz default now(),unique(user_id,anime_id));
+create table likes(user_id uuid references profiles(id) on delete cascade,log_id bigint references logs(id) on delete cascade,primary key(user_id,log_id));
+create table follows(follower uuid references profiles(id) on delete cascade,following uuid references profiles(id) on delete cascade,primary key(follower,following),check(follower<>following));
+alter table profiles enable row level security;alter table logs enable row level security;alter table likes enable row level security;alter table follows enable row level security;
+create policy "read" on profiles for select using(true);
+create policy "own" on profiles for update using(auth.uid()=id);
+create policy "read" on logs for select using(true);
+create policy "own" on logs for all using(auth.uid()=user_id) with check(auth.uid()=user_id);
+create policy "read" on likes for select using(true);
+create policy "own" on likes for all using(auth.uid()=user_id) with check(auth.uid()=user_id);
+create policy "read" on follows for select using(true);
+create policy "own" on follows for all using(auth.uid()=follower) with check(auth.uid()=follower);
+create function handle_new_user() returns trigger language plpgsql security definer set search_path=public as $$ begin insert into profiles(id,username) values(new.id,new.raw_user_meta_data->>'username');return new;end $$;
+create trigger on_auth_user_created after insert on auth.users for each row execute function handle_new_user();
